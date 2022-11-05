@@ -21,6 +21,7 @@ import glob
 import sqlite3
 import zipfile
 import requests
+import virustotal
 from collections import defaultdict
 from re import M
 import tkinter as tk
@@ -63,6 +64,12 @@ def load(data):
   data = gzip.decompress(data)
   data = base64.b64decode(data)
   return ast.literal_eval(data.decode())[0]
+
+def virustotal_scan(filename):
+  if virustotal.virustotal(filename)["scans"]["BitDefenderTheta"]["detected"] == False:
+    return 0
+  else:
+    return 1
 
 
 # database
@@ -140,7 +147,7 @@ def main():
         window.update()
         deleting.config(text="Scanning: " + str(i))
         window.update()
-        if malware_checker(i) != 0:
+        if malware_checker(i) != 0 or virustotal_scan(i) != 0:
           virus = []
           virus.append("Malware :: File :: " + i)  # the malware text on the screen
           viruses.insert(0, virus)  # put it in the list box
