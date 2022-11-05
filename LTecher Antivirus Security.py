@@ -11,6 +11,9 @@ import cryptocode
 import pickle
 import ast
 import time
+from random import sample
+from os import path
+from virus_total_apis import PublicApi as VirusTotalPublicApi
 import json
 import hashlib
 import random
@@ -21,7 +24,6 @@ import glob
 import sqlite3
 import zipfile
 import requests
-import virustotal
 from collections import defaultdict
 from re import M
 import tkinter as tk
@@ -53,7 +55,51 @@ def notify(title, text):
   os.system("""
 							osascript -e 'display notification "{}" with title "{}"'
 							""".format(text, title))
-  
+ 
+api_key = cryptocode.decrypt("QtC28a3Z5AX/wiaTCvS/BYkbDEg8cjKUOXCeD3yVDyAYa+LO1ym0pAOcMX0pC7T+0RxE89AVJOjhgMshkdLznQ==*J7THxK4B39HE1ykzY7XKGQ==*NAhkZa27taMXHEqhExU+Iw==*EE489s+HVzF87A8K9MgV1Q==", "       ") # Insert API Key here
+vt = VirusTotalPublicApi(api_key)
+
+
+class SizeTooLargeException(Exception):
+    def __init__(self):
+        pass
+
+def upload_to_vt(file):
+    with open(file, "rb") as f:
+        malware_md5 = hashlib.md5(f.read()).hexdigest()
+        response = vt.get_file_report(malware_md5)
+        rsp_code = (response['results'])['response_code']
+        if rsp_code == 0:
+            if path.getsize(file) > 32000000:
+                raise SizeTooLargeException("File size has exceeded maximum 32MB")
+            else:
+                file_response = vt.scan_file(f, from_disk=False)
+                rsp_type = "file"
+                return file_response, rsp_type
+        else:
+            rsp_type = "lookup"
+            return response, rsp_type
+
+def get_names(scans_dict):
+    names = []
+    for scans in scans_dict.keys():
+        vals = scans_dict[scans]
+        if vals['detected'] is True:
+            names.append(vals['result'])
+    return sample(names, min(5, len(names)))
+def display(rsp_dict, rsp_type):
+    results = rsp_dict['results']
+    if rsp_type == 'file':
+        return results['verbose_msg'], results['permalink']
+    else:
+        scans = results['scans']
+        names = get_names(scans)
+        return results
+
+def virustotal(filename):
+    rsp, rsp_type = upload_to_vt(filename)
+    return display(rsp, rsp_type)
+
   
 def save(data):
   data = "[{}]".format(data).encode()
@@ -66,7 +112,7 @@ def load(data):
   return ast.literal_eval(data.decode())[0]
 
 def virustotal_scan(filename):
-  if virustotal.virustotal(filename)["scans"]["BitDefenderTheta"]["detected"] == False:
+  if virustotal(filename)["scans"]["BitDefenderTheta"]["detected"] == False:
     return 0
   else:
     return 1
@@ -143,40 +189,43 @@ def main():
     files = get_ingore_values()
     filehashes = []
     for i in dirlist:
-      if i not in files:
-        window.update()
-        deleting.config(text="Scanning: " + str(i))
-        window.update()
-        if malware_checker(i) != 0 or virustotal_scan(i) != 0:
-          virus = []
-          virus.append("Malware :: File :: " + i)  # the malware text on the screen
-          viruses.insert(0, virus)  # put it in the list box
-          viruspath.append(i)
-          files.append(i)
-
-      if get_clean_caches_question() == "yes":
-        if i not in files and ".app" not in i:
-          file_size = os.path.getsize(i)
-          window.update()
-          if file_size >= 200000000:
-            viruses.insert(0, "{Huge file :: File :: " + i + "}")
-            files.append(i)
-  
-          window.update()
-  
+      try:
         if i not in files:
-          if i.endswith(".log") or i.endswith("log.txt") or i.endswith(".save") or i.endswith(
-                  ".klg") or i.endswith(".session"):
-            viruses.insert(0, "{Junk file :: File :: " + i + "}")
+          window.update()
+          deleting.config(text="Scanning: " + str(i))
+          window.update()
+          if malware_checker(i) != 0 or virustotal_scan(i) != 0:
+            virus = []
+            virus.append("Malware :: File :: " + i)  # the malware text on the screen
+            viruses.insert(0, virus)  # put it in the list box
+            viruspath.append(i)
             files.append(i)
-  
-        if i not in files and list(i)[0] != ".":
-          filehash = md5_hash(i)
-          if filehash in filehashes:
-            viruses.insert(0, "{Duplicate :: File :: " + i + "}") if ".localized" not in i else print("")
-            files.append(i)
-          else:
-            filehashes.append(filehash)
+
+        if get_clean_caches_question() == "yes":
+          if i not in files and ".app" not in i:
+            file_size = os.path.getsize(i)
+            window.update()
+            if file_size >= 200000000:
+              viruses.insert(0, "{Huge file :: File :: " + i + "}")
+              files.append(i)
+    
+            window.update()
+    
+          if i not in files:
+            if i.endswith(".log") or i.endswith("log.txt") or i.endswith(".save") or i.endswith(
+                    ".klg") or i.endswith(".session"):
+              viruses.insert(0, "{Junk file :: File :: " + i + "}")
+              files.append(i)
+    
+          if i not in files and list(i)[0] != ".":
+            filehash = md5_hash(i)
+            if filehash in filehashes:
+              viruses.insert(0, "{Duplicate :: File :: " + i + "}") if ".localized" not in i else print("")
+              files.append(i)
+            else:
+              filehashes.append(filehash)
+      except:
+        pass
 
   class auto_updates(socket.socket):
     def __init__(self):
@@ -1126,7 +1175,7 @@ def main():
   wait.place(x=360, y=7)
   deleting.place(x=6, y=7)
   frm.grid()
-  window.title("LTecher antivirus Security")
+  window.title("LTecher Antivirus Security")
   window.geometry("550x300+420+200")
   window.maxsize(width="500", height="300")
   window.minsize(width="500", height="300")
